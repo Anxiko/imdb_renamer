@@ -56,6 +56,17 @@ class CountryEntry:
 		self._normalized_short_3letters = type(self)._normalize_string(short_3letters) \
 			if short_3letters else None
 
+	@classmethod
+	def make_single_abbrev(cls, long_name: Optional[str], abbrev: Optional[str]) -> 'CountryEntry':
+		if abbrev is not None and len(abbrev) == 2:
+			abbrev_2letters: str = abbrev
+			abbrev_3letters: Optional[str] = None
+		else:
+			abbrev_2letters: Optional[str] = None
+			abbrev_3letters: Optional[str] = abbrev
+
+		return cls(long_name, abbrev_2letters, abbrev_3letters)
+
 	def __repr__(self) -> str:
 		return "<{}:[{}] {}:[{}] {}:[{}]>".format(
 			self.long_name, self.get_normalized_long_name(),
@@ -71,6 +82,16 @@ class CountryEntry:
 
 	def get_normalized_short_3letters(self) -> Optional[str]:
 		return self._normalized_short_3letters
+
+	@staticmethod
+	def _get_preference(first_choice: Optional[str], second_choice: Optional[str]) -> Optional[str]:
+		return first_choice if first_choice is not None else second_choice
+
+	def get_shorter_abbrev(self) -> Optional[str]:
+		return type(self)._get_preference(self.short_2letters, self.short_3letters)
+
+	def get_longer_abbrev(self) -> Optional[str]:
+		return type(self)._get_preference(self.short_3letters, self.short_2letters)
 
 	def to_dict(self) -> Dict[str, Optional[str]]:
 		return {
@@ -99,6 +120,8 @@ class CountryDb:
 			key: Callable[[CountryEntry], str], field_name: str
 	):
 		new_entry_key: str = key(new_entry)
+		if new_entry_key is None:
+			return
 		existing_entry: Optional[CountryEntry] = mapping.get(new_entry_key)
 		if existing_entry is not None:
 			raise ValueError("{} and {} clash, shared {}".format(new_entry, existing_entry, field_name))
@@ -111,14 +134,17 @@ class CountryDb:
 		self._short_3letters_mapping = {}
 
 		for entry in entries:
-			type(self)._add_entry_to_mapping(
-				entry, self._long_name_mapping, CountryEntry.get_normalized_long_name, "long name")
-			type(self)._add_entry_to_mapping(
-				entry, self._short_2letters_mapping, CountryEntry.get_normalized_short_3letters, "short 2 letters name"
-			)
-			type(self)._add_entry_to_mapping(
-				entry, self._short_3letters_mapping, CountryEntry.get_normalized_short_3letters, "short 3 letters name"
-			)
+			self.insert_entry(entry)
+
+	def insert_entry(self, entry: CountryEntry) -> None:
+		type(self)._add_entry_to_mapping(
+			entry, self._long_name_mapping, CountryEntry.get_normalized_long_name, "long name")
+		type(self)._add_entry_to_mapping(
+			entry, self._short_2letters_mapping, CountryEntry.get_normalized_short_3letters, "short 2 letters name"
+		)
+		type(self)._add_entry_to_mapping(
+			entry, self._short_3letters_mapping, CountryEntry.get_normalized_short_3letters, "short 3 letters name"
+		)
 
 	@staticmethod
 	def _maybe_normalize(raw: str, normalize: bool) -> str:
@@ -167,54 +193,3 @@ class CountryDb:
 	def from_serializable_list(cls, l: List[Dict[str, Optional[str]]]) -> 'CountryDb':
 		entries: List[CountryEntry] = list(map(CountryEntry.from_dict, l))
 		return cls(entries)
-
-
-def load_db() -> CountryDb:
-	with open('country_db.json', encoding='utf-8') as file:
-		raw_list: List[Dict[str, Optional[str]]] = json.load(file)
-		db: CountryDb = CountryDb.from_serializable_list(raw_list)
-		return db
-
-
-_OPTION_PATTERN: Pattern = re.compile(r'<option value="(.*)">(.*)</option>')
-
-
-def load_options() -> List[CountryEntry]:
-	countries: List[CountryEntry] = []
-	with open('options.txt', encoding='utf=8') as file:
-		for line in file:
-			line: str = line.strip()
-			if len(line) == 0:
-				continue
-
-			match: Match = _OPTION_PATTERN.match(line)
-			if match is None:
-				print("ERROR: line rejected ({})".format(line), file=sys.stderr)
-			else:
-				long_name, short_2letters = match.group(2), match.group(1)
-				countries.append(CountryEntry(
-					long_name, short_2letters, None
-				))
-
-		return countries
-
-
-def main() -> None:
-	options: List[CountryEntry] = load_options()
-	db: CountryDb = load_db()
-
-	for option in options:
-		found_entry: Optional[CountryEntry] = db.find_anywhere(option.long_name)
-		if found_entry is None:
-			found_entry = db.find_anywhere(option.short_2letters)
-			if found_entry is None:
-				print("Could not find ({}) by any means".format(option), file=sys.stderr)
-			else:
-				print("[SHORT]\t{} => {}".format(option, found_entry))
-
-		else:
-			print("[LONG]\t{} => {}".format(option, found_entry))
-
-
-if __name__ == '__main__':
-	main()
