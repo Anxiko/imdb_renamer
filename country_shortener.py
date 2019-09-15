@@ -1,5 +1,7 @@
 import json
-from typing import List, Dict, Optional, Callable
+import re
+import sys
+from typing import List, Dict, Optional, Callable, Pattern, Match
 
 
 class CountryEntry:
@@ -41,7 +43,7 @@ class CountryEntry:
 
 		return ''.join(country_parts)
 
-	def __init__(self, long_name: str, short_2letters: str, short_3letters: str):
+	def __init__(self, long_name: Optional[str], short_2letters: Optional[str], short_3letters: Optional[str]):
 		self.long_name = long_name
 		self._normalized_long_name = type(self).normalize_country(long_name) \
 			if long_name else None
@@ -136,9 +138,9 @@ class CountryDb:
 	def find_anywhere(self, country: str) -> Optional[CountryEntry]:
 		normalized_name: str = CountryEntry.normalize_country(country)
 		finders: List[Callable[[str, bool], Optional[CountryEntry]]] = [
-			type(self).find_by_long_name,
-			type(self).find_by_short_2letters,
-			type(self).find_by_short_3letters
+			self.find_by_long_name,
+			self.find_by_short_2letters,
+			self.find_by_short_3letters
 		]
 
 		for finder in finders:
@@ -167,11 +169,51 @@ class CountryDb:
 		return cls(entries)
 
 
-def main() -> None:
-	with open('country_db.json') as file:
+def load_db() -> CountryDb:
+	with open('country_db.json', encoding='utf-8') as file:
 		raw_list: List[Dict[str, Optional[str]]] = json.load(file)
 		db: CountryDb = CountryDb.from_serializable_list(raw_list)
-		print(db)
+		return db
+
+
+_OPTION_PATTERN: Pattern = re.compile(r'<option value="(.*)">(.*)</option>')
+
+
+def load_options() -> List[CountryEntry]:
+	countries: List[CountryEntry] = []
+	with open('options.txt', encoding='utf=8') as file:
+		for line in file:
+			line: str = line.strip()
+			if len(line) == 0:
+				continue
+
+			match: Match = _OPTION_PATTERN.match(line)
+			if match is None:
+				print("ERROR: line rejected ({})".format(line), file=sys.stderr)
+			else:
+				long_name, short_2letters = match.group(2), match.group(1)
+				countries.append(CountryEntry(
+					long_name, short_2letters, None
+				))
+
+		return countries
+
+
+def main() -> None:
+	options: List[CountryEntry] = load_options()
+	db: CountryDb = load_db()
+
+	for option in options:
+		found_entry: Optional[CountryEntry] = db.find_anywhere(option.long_name)
+		if found_entry is None:
+			found_entry = db.find_anywhere(option.short_2letters)
+			if found_entry is None:
+				print("Could not find ({}) by any means".format(option), file=sys.stderr)
+			else:
+				print("[SHORT]\t{} => {}".format(option, found_entry))
+
+		else:
+			print("[LONG]\t{} => {}".format(option, found_entry))
 
 
 if __name__ == '__main__':
