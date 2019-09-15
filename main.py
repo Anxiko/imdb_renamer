@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sys
+import traceback
 from string import Template
 from typing import Dict, Any, Optional, List, TypeVar, Callable, Tuple, Pattern, Match, Set, TextIO
 
@@ -693,6 +694,7 @@ def main() -> None:
 		log("END")
 	except Exception as e:
 		log("EXECUTION ERROR: {!r}".format(e), error=True)
+		log("Error details: {}".format(traceback.format_exc()))
 
 
 if __name__ == '__main__':
