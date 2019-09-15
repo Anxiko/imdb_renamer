@@ -127,10 +127,9 @@ class Movie:
 		self.set_countries(countries)
 
 	@staticmethod
-	def shorten_countries(raw_countries: str) -> str:
+	def _shorten_countries(original_countries: List[str]) -> str:
 		db: CountryDb = CountryDb.get_singleton()
 
-		original_countries: List[str] = list(map(str.strip, raw_countries.split(',')))
 		transformed_countries: List[str] = []
 		for original_country in original_countries:
 			found_entry: Optional[CountryEntry] = db.find_anywhere(original_country)
@@ -162,7 +161,8 @@ class Movie:
 		self.actors = cleanse_string(self._calculate_actors())
 
 	def set_countries(self, countries: Optional[str]) -> None:
-		self._raw_countries = list(map(str.strip, countries.split(','))) if countries is not None else None
+		self._raw_countries = type(self)._shorten_countries(list(map(str.strip, countries.split(',')))) \
+			if countries is not None else None
 		self.countries = cleanse_string(self._calculate_countries(), wildcard='-')
 
 	def _calculate_actors(self) -> Optional[str]:
