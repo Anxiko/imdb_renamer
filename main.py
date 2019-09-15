@@ -11,7 +11,7 @@ import requests
 api_url: str = 'http://www.omdbapi.com/'
 api_key: str = 'fb47edfb'
 
-folder_name_template: Template = Template('${title} (${country} ${year}, ${director} - ${actors})')
+folder_name_template: Template = Template('${title} (${countries} ${year}, ${director} - ${actors})')
 
 dirname_parsing_regex: Pattern = re.compile('(.*)\\(.*(\\d{4}).*\\)')
 optional_title_parsing_regex: Pattern = re.compile('(.*),\\s+(the)', flags=re.IGNORECASE)
