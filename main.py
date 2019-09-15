@@ -127,7 +127,7 @@ class Movie:
 		self.set_countries(countries)
 
 	@staticmethod
-	def _shorten_countries(original_countries: List[str]) -> str:
+	def _shorten_countries(original_countries: List[str]) -> List[str]:
 		db: CountryDb = CountryDb.get_singleton()
 
 		transformed_countries: List[str] = []
@@ -140,7 +140,7 @@ class Movie:
 			else:
 				transformed_countries.append(found_shortened)
 
-		return ', '.join(transformed_countries)
+		return transformed_countries
 
 	def to_formatted_filename(self) -> str:
 		return folder_name_template.safe_substitute(self.__dict__)
