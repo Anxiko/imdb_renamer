@@ -682,14 +682,23 @@ class CountryDb:
 		return cls._SINGLETON_INSTANCE
 
 
+BASE_PATH_ENV_VAR: str = 'IMDB_RENAMER_BASE_PATH'
+BASE_PATH_DEFAULT: str = '.'
+
+DRY_RUN_ENV_VAR: str = 'IMDB_DRY_RUN'
+DRY_RUN_DEFAULT: bool = False
+
+
 def main() -> None:
 	try:
 		log('START')
 
-		base_path: str = os.path.abspath('./test')
+		base_path: str = os.path.abspath(os.environ.get(BASE_PATH_ENV_VAR, BASE_PATH_DEFAULT))
+		dry_run: bool = bool(os.environ.get(DRY_RUN_ENV_VAR, DRY_RUN_DEFAULT))
+
 		log('Directory: {}'.format(base_path))
 
-		rename_movie_folders(base_path, dry_run=False)
+		rename_movie_folders(base_path, dry_run)
 
 		log("END")
 	except Exception as e:
