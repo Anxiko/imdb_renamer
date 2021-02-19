@@ -448,16 +448,16 @@ def prompt_movie_title(
 
 	option: OptionMovieNaming
 	option_description: str
-	for option, option_description in options_dict:
+	for option, option_description in options_dict.items():
 		option_text: str = option.value
 		if option == default_option:
-			option_text = f"{option_text.upper()} (Default)"
+			option_text = f"[{option_text.upper()}] (Default)"
 		else:
 			option_text = f"[{option_text.lower()}]"
 
 		prompt_text += f"{option_text}: {option_description}\n"
 
-	prompt_text += "\nChose an option"
+	prompt_text += "Chose an option"
 	if default_option is not None:
 		prompt_text += ", or leave blank for default"
 	prompt_text += ":"
