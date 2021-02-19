@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import traceback
+from enum import Enum
 from string import Template
 from typing import Dict, Any, Optional, List, TypeVar, Callable, Tuple, Pattern, Match, Set, TextIO
 
@@ -417,11 +418,95 @@ def rename_folder(original: str, new: str) -> None:
 	os.rename(original, new)
 
 
+class OptionMovieNaming(Enum):
+	IMDB = 'i'
+	DIRNAME = 'd'
+	MANUAL = 'm'
+
+
+def prompt_movie_title(
+		title_from_imdb: str, title_from_dirname: str, default_option: Optional[OptionMovieNaming]) -> str:
+	"""
+	Get a movie name, from one of the three options. If "manual" is selected, prompt the user from the title.
+
+	:param title_from_imdb: the movie title as extracted from IMDB
+	:param title_from_dirname: the movie title as extracted from the dirname
+	:param default_option: which of the options (if any) should be a default option.
+	:return: the selected movie title
+	"""
+	options_dict: Dict[OptionMovieNaming, str] = {
+		OptionMovieNaming.IMDB: title_from_imdb,
+		OptionMovieNaming.DIRNAME: title_from_dirname,
+		OptionMovieNaming.MANUAL: 'Type in a movie name, manually'
+	}
+
+	if default_option is not None and default_option not in options_dict:
+		log(f"Default option {default_option} is not a valid option itself", error=True, silent=True)
+		default_option = None
+
+	prompt_text: str = ""
+
+	option: OptionMovieNaming
+	option_description: str
+	for option, option_description in options_dict:
+		option_text: str = option.value
+		if option == default_option:
+			option_text = f"{option_text.upper()} (Default)"
+		else:
+			option_text = f"[{option_text.lower()}]"
+
+		prompt_text += f"{option_text}: {option_description}\n"
+
+	prompt_text += "\nChose an option"
+	if default_option is not None:
+		prompt_text += ", or leave blank for default"
+	prompt_text += ":"
+
+	def option_movie_name_validator(raw: str) -> Tuple[bool, Optional[OptionMovieNaming]]:
+		raw = raw.strip().lower()
+		if len(raw) == 0:
+			if default_option is not None:
+				return True, default_option
+			else:
+				print("ERROR! There is no default option, you must choose one of the above.")
+
+		chosen_option: Optional[OptionMovieNaming]
+		try:
+			chosen_option: OptionMovieNaming = OptionMovieNaming(raw)
+
+			if chosen_option not in options_dict:
+				chosen_option = None
+		except ValueError:
+			chosen_option = None
+
+		if chosen_option is None:
+			print(f"ERROR! {raw} isn't a valid option.")
+			return False, None
+
+		return True, chosen_option
+
+	chosen_option: OptionMovieNaming = prompt(
+		prompt_text, "Choose one of the valid options.", option_movie_name_validator)
+
+	if chosen_option == OptionMovieNaming.IMDB:
+		return title_from_imdb
+	elif chosen_option == OptionMovieNaming.DIRNAME:
+		return title_from_dirname
+	else:  # If manual is chosen, prompt now for a  title
+		manual_movie_title: str = prompt(
+			"Input the movie title manually: ", "ERROR! Title can't be empty.",
+			lambda title: (True, title.strip()) if len(title.strip()) > 0 else (False, None)
+		)
+
+		return manual_movie_title
+
+
 def get_movie_for_dir(root: str, dirname: str, filenames: List[str]) -> Optional[Movie]:
 	if len(filenames) == 0:
 		log("Skipping empty dir {}".format(os.path.join(root, dirname)), error=True)
 		return None
 
+	# If a data file already exists on the folder, the information can be extracted from it
 	if MovieConfig.MOVIE_CONFIG_FILENAME in filenames:
 		movie_config_path: str = os.path.join(root, dirname, MovieConfig.MOVIE_CONFIG_FILENAME)
 		with open(movie_config_path) as open_file:
@@ -431,18 +516,31 @@ def get_movie_for_dir(root: str, dirname: str, filenames: List[str]) -> Optional
 			optional_title: Optional[str] = movie_config.title
 			if optional_title is not None:
 				movie.set_title(optional_title)
+	# If no file is present, it's the first time processing this directory
 	else:
+		# Attempt to construct the movie object from the dirname
 		movie: Optional[Movie] = Movie.from_filename(dirname)
 		if movie is None:
 			movie = prompt_imdb_id()
 
+			"""
+			There are 3 different options to name the movie at this stage:
+			
+			- [I] (Default): use IMDB's name
+			- [d]: use the name extracted from the directory itself
+			- [m]: type in a name for the movie manually
+			
+			First, one of the valid options should be selected. In case of the options where nothing needs to be typed
+			(options [I] and [d]), the corresponding value should be displayed.Entering nothing should select the 
+			default option. If a title needs to be typed manually, it should be typed after the option has been chosen.
+			"""
+
 			movie_title, movie_year = extract_info_from_dirname(dirname, silent=True)
 
-			optional_title: Optional[str] = prompt_title(movie_title)
-			if optional_title is not None:
-				movie.set_title(optional_title)
+			chosen_movie_title: str = prompt_movie_title(movie.title, movie_title, OptionMovieNaming.IMDB)
+			movie.set_title(chosen_movie_title)
 
-			movie_config: MovieConfig = MovieConfig(movie.imdb_id, optional_title)
+			movie_config: MovieConfig = MovieConfig(movie.imdb_id, chosen_movie_title)
 			movie_config.write_to_file(
 				os.path.join(root, dirname, MovieConfig.MOVIE_CONFIG_FILENAME)
 			)
