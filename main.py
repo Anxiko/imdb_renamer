@@ -547,6 +547,8 @@ def get_movie_from_prompt(movie_dir_data: MovieDirData) -> Optional[Movie]:
 	chosen_movie_title: str = prompt_movie_title(movie.title, movie_title, OptionMovieNaming.IMDB)
 	movie.set_title(chosen_movie_title)
 
+	return movie
+
 
 def get_movie_from_dir(movie_dir_data: MovieDirData) -> Optional[Movie]:
 	"""
@@ -623,7 +625,10 @@ def rename_movie_folders(path: str, dry_run: bool = True) -> None:
 		try:
 			# Redo all unprocessed directories, by now prompting the user for the IMDB ID
 			print(f"Processing {dir_data.dirname}...")
-			movie: Movie = get_movie_from_prompt(dir_data)
+			movie: Optional[Movie] = get_movie_from_prompt(dir_data)
+
+			if movie is None:
+				print(f"{dir_data} skipped.")
 
 			# We could always save this info, but saving only when it is necessary reduces the amount of files created
 			movie_config: MovieConfig = MovieConfig(movie.imdb_id, movie.title)
