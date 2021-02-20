@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import traceback
+from dataclasses import dataclass
 from enum import Enum
 from string import Template
 from typing import Dict, Any, Optional, List, TypeVar, Callable, Tuple, Pattern, Match, Set, TextIO
@@ -397,8 +398,24 @@ def get_movie_details(imdb_id: str) -> Optional[Dict[str, Any]]:
 	return parsed_json
 
 
-def walk_folder(base_folder: str) -> List[Tuple[str, str, List[str]]]:
-	rv: List[Tuple[str, str, List[str]]] = []
+@dataclass
+class MovieDirData:
+	root: str
+	dirname: str
+	filenames: List[str]
+
+	def full_path(self) -> str:
+		return os.path.join(self.root, self.dirname)
+
+	def contains_filename(self, filename: str) -> bool:
+		return filename in self.filenames
+
+	def has_files(self) -> bool:
+		return len(self.filenames) > 0
+
+
+def walk_folder(base_folder: str) -> List[MovieDirData]:
+	rv: List[MovieDirData] = []
 	complete_path: str = os.path.abspath(base_folder)
 
 	root, dirs, files = next(os.walk(complete_path))
@@ -408,7 +425,7 @@ def walk_folder(base_folder: str) -> List[Tuple[str, str, List[str]]]:
 		_, _, dir_files = next(os.walk(this_dir_complete))
 
 		rv.append(
-			(root, this_dir, dir_files)
+			MovieDirData(root, this_dir, dir_files)
 		)
 
 	return rv
@@ -501,51 +518,78 @@ def prompt_movie_title(
 		return manual_movie_title
 
 
-def get_movie_for_dir(root: str, dirname: str, filenames: List[str]) -> Optional[Movie]:
-	if len(filenames) == 0:
-		log("Skipping empty dir {}".format(os.path.join(root, dirname)), error=True)
+def get_movie_from_prompt(movie_dir_data: MovieDirData) -> Optional[Movie]:
+	"""
+	Get the movie from the given directory data, by prompting the user.
+	The user can skip the entry by not inputting any ID, in which case None is returned.
+
+	There are 3 different options to name the movie at this stage:
+
+	- [I] (Default): use IMDB's name
+	- [d]: use the name extracted from the directory itself
+	- [m]: type in a name for the movie manually
+
+	First, one of the valid options should be selected. In case of the options where nothing needs to be typed
+	(options [I] and [d]), the corresponding value should be displayed.Entering nothing should select the
+	default option. If a title needs to be typed manually, it should be typed after the option has been chosen.
+
+
+	:param movie_dir_data: movie's directory data
+	:return: movie extracted from the prompt, or None if skipped
+	"""
+
+	movie: Optional[Movie] = prompt_imdb_id()
+	if movie is None:
 		return None
 
+	movie_title, movie_year = extract_info_from_dirname(movie_dir_data.dirname, silent=True)
+
+	chosen_movie_title: str = prompt_movie_title(movie.title, movie_title, OptionMovieNaming.IMDB)
+	movie.set_title(chosen_movie_title)
+
+
+def get_movie_from_dir(movie_dir_data: MovieDirData) -> Optional[Movie]:
+	"""
+	Extract the movie from the directory name alone, either by its dirname, or through its settings file.
+	Only valid target directories should be given! For example, empty directories should not be passed into it.
+
+	:param movie_dir_data: movie's directory data
+	:return: movie extracted from directory data, or None
+	"""
+	movie: Optional[Movie]
+
 	# If a data file already exists on the folder, the information can be extracted from it
-	if MovieConfig.MOVIE_CONFIG_FILENAME in filenames:
-		movie_config_path: str = os.path.join(root, dirname, MovieConfig.MOVIE_CONFIG_FILENAME)
+	if movie_dir_data.contains_filename(MovieConfig.MOVIE_CONFIG_FILENAME):
+		movie_config_path: str = os.path.join(
+			movie_dir_data.full_path(), MovieConfig.MOVIE_CONFIG_FILENAME)
+
 		with open(movie_config_path) as open_file:
 			movie_config: MovieConfig = MovieConfig.from_json(json.load(open_file))
 			imdb_id: str = movie_config.imdb_id
-			movie: Optional[Movie] = Movie.from_imdb_id(imdb_id)
+			movie = Movie.from_imdb_id(imdb_id)
 			optional_title: Optional[str] = movie_config.title
 			if optional_title is not None:
 				movie.set_title(optional_title)
-	# If no file is present, it's the first time processing this directory
-	else:
-		# Attempt to construct the movie object from the dirname
-		movie: Optional[Movie] = Movie.from_filename(dirname)
-		if movie is None:
-			movie = prompt_imdb_id()
 
-			"""
-			There are 3 different options to name the movie at this stage:
-			
-			- [I] (Default): use IMDB's name
-			- [d]: use the name extracted from the directory itself
-			- [m]: type in a name for the movie manually
-			
-			First, one of the valid options should be selected. In case of the options where nothing needs to be typed
-			(options [I] and [d]), the corresponding value should be displayed.Entering nothing should select the 
-			default option. If a title needs to be typed manually, it should be typed after the option has been chosen.
-			"""
-
-			movie_title, movie_year = extract_info_from_dirname(dirname, silent=True)
-
-			chosen_movie_title: str = prompt_movie_title(movie.title, movie_title, OptionMovieNaming.IMDB)
-			movie.set_title(chosen_movie_title)
-
-			movie_config: MovieConfig = MovieConfig(movie.imdb_id, chosen_movie_title)
-			movie_config.write_to_file(
-				os.path.join(root, dirname, MovieConfig.MOVIE_CONFIG_FILENAME)
-			)
-
+	else:  # If no file is present, attempt to search this movie by its dirname
+		movie = Movie.from_filename(movie_dir_data.dirname)  # This can fail, caller should check
 	return movie
+
+
+def rename_movie_folder(movie_dir_data: MovieDirData, movie: Movie, dry_run: bool) -> None:
+	old_full_path: str = movie_dir_data.full_path()
+
+	new_dirname: str = movie.to_formatted_filename()
+
+	new_full_path: str = os.path.join(movie_dir_data.root, new_dirname)
+
+	print("{} => {}".format(
+		old_full_path,
+		new_full_path
+	))
+
+	if not dry_run:
+		rename_folder(old_full_path, new_full_path)
 
 
 def rename_movie_folders(path: str, dry_run: bool = True) -> None:
@@ -554,28 +598,42 @@ def rename_movie_folders(path: str, dry_run: bool = True) -> None:
 	else:
 		log("Dry run renaming at {}".format(path))
 
-	folder_and_filename_list: List[Tuple[str, str, List[str]]] = walk_folder(path)
+	dir_data_list: List[MovieDirData] = walk_folder(path)
+	dir_data_list = list(filter(MovieDirData.has_files, dir_data_list))  # Filter out empty directories
 
-	print("{} folder(s) detected".format(len(folder_and_filename_list)))
-	for root, dirname, filenames in folder_and_filename_list:
+	print(
+		f"{len(dir_data_list)} folder(s) detected."
+	)
+
+	unprocessed_dir_data_list: List[MovieDirData] = []
+
+	for dir_data in dir_data_list:
 		try:
-			movie: Movie = get_movie_for_dir(root, dirname, filenames)
+			movie: Optional[Movie] = get_movie_from_dir(dir_data)
 
 			if movie is None:
-				print("No movie found for {}".format(os.path.join(root, dirname)), file=sys.stderr)
-				continue
-
-			new_dirname: str = movie.to_formatted_filename()
-
-			print("{} => {}".format(
-				os.path.join(root, dirname),
-				os.path.join(root, new_dirname)
-			))
-
-			if not dry_run:
-				rename_folder(os.path.join(root, dirname), os.path.join(root, new_dirname))
+				print("No movie found for {}, postponing...".format(dir_data))
+				unprocessed_dir_data_list.append(dir_data)
+			else:
+				rename_movie_folder(dir_data, movie, dry_run)
 		except Exception as e:
-			log("ERROR processing {} {} {}: {!r}".format(root, dirname, filenames, e))
+			log(f"ERROR! Processing entry {dir_data}: {e!r}")
+
+	for dir_data in unprocessed_dir_data_list:
+		try:
+			# Redo all unprocessed directories, by now prompting the user for the IMDB ID
+			print(f"Processing {dir_data.dirname}...")
+			movie: Movie = get_movie_from_prompt(dir_data)
+
+			# We could always save this info, but saving only when it is necessary reduces the amount of files created
+			movie_config: MovieConfig = MovieConfig(movie.imdb_id, movie.title)
+			movie_config.write_to_file(
+				os.path.join(dir_data.full_path(), MovieConfig.MOVIE_CONFIG_FILENAME)
+			)
+
+			rename_movie_folder(dir_data, movie, dry_run)
+		except Exception as e:
+			log(f"ERROR! Processing entry {dir_data}: {e!r}")
 
 
 class CountryEntry:
