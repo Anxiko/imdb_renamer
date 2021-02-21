@@ -629,14 +629,14 @@ def rename_movie_folders(path: str, dry_run: bool = True) -> None:
 
 			if movie is None:
 				print(f"{dir_data} skipped.")
+			else:
+				# We could always save this info, but saving only when it is necessary reduces the amount of files created
+				movie_config: MovieConfig = MovieConfig(movie.imdb_id, movie.title)
+				movie_config.write_to_file(
+					os.path.join(dir_data.full_path(), MovieConfig.MOVIE_CONFIG_FILENAME)
+				)
 
-			# We could always save this info, but saving only when it is necessary reduces the amount of files created
-			movie_config: MovieConfig = MovieConfig(movie.imdb_id, movie.title)
-			movie_config.write_to_file(
-				os.path.join(dir_data.full_path(), MovieConfig.MOVIE_CONFIG_FILENAME)
-			)
-
-			rename_movie_folder(dir_data, movie, dry_run)
+				rename_movie_folder(dir_data, movie, dry_run)
 		except Exception as e:
 			log(f"ERROR! Processing entry {dir_data}: {e!r}")
 
@@ -865,6 +865,8 @@ def main() -> None:
 	except Exception as e:
 		log("EXECUTION ERROR: {!r}".format(e), error=True)
 		log("Error details: {}".format(traceback.format_exc()))
+	except KeyboardInterrupt:
+		log("Execution halted by user. Quitting.")
 
 
 if __name__ == '__main__':
