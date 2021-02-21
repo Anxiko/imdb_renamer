@@ -439,6 +439,11 @@ class OptionMovieNaming(Enum):
 	IMDB = 'i'
 	DIRNAME = 'd'
 	MANUAL = 'm'
+	QUIT = 'q'
+
+
+class QuitException(Exception):
+	pass
 
 
 def prompt_movie_title(
@@ -454,7 +459,8 @@ def prompt_movie_title(
 	options_dict: Dict[OptionMovieNaming, str] = {
 		OptionMovieNaming.IMDB: title_from_imdb,
 		OptionMovieNaming.DIRNAME: title_from_dirname,
-		OptionMovieNaming.MANUAL: 'Type in a movie name, manually'
+		OptionMovieNaming.MANUAL: 'Type in a movie name, manually',
+		OptionMovieNaming.QUIT: 'Quit the program'
 	}
 
 	if default_option is not None and default_option not in options_dict:
@@ -509,13 +515,17 @@ def prompt_movie_title(
 		return title_from_imdb
 	elif chosen_option == OptionMovieNaming.DIRNAME:
 		return title_from_dirname
-	else:  # If manual is chosen, prompt now for a  title
+	elif chosen_option == OptionMovieNaming.MANUAL:  # If manual is chosen, prompt now for a  title
 		manual_movie_title: str = prompt(
 			"Input the movie title manually: ", "ERROR! Title can't be empty.",
 			lambda title: (True, title.strip()) if len(title.strip()) > 0 else (False, None)
 		)
 
 		return manual_movie_title
+	elif chosen_option == OptionMovieNaming.QUIT:
+		raise QuitException
+	else:
+		raise ValueError(f"Unexpected option: {chosen_option}")
 
 
 def get_movie_from_prompt(movie_dir_data: MovieDirData) -> Optional[Movie]:
@@ -637,6 +647,9 @@ def rename_movie_folders(path: str, dry_run: bool = True) -> None:
 				)
 
 				rename_movie_folder(dir_data, movie, dry_run)
+		except QuitException:
+			log(f"Quitting...")
+			break
 		except Exception as e:
 			log(f"ERROR! Processing entry {dir_data}: {e!r}")
 
