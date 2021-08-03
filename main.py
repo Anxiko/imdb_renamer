@@ -436,9 +436,9 @@ def rename_folder(original: str, new: str) -> None:
 
 
 class OptionMovieNaming(Enum):
-	IMDB = 'i'
-	DIRNAME = 'd'
-	MANUAL = 'm'
+	IMDB = '1'
+	DIRNAME = '2'
+	MANUAL = '3'
 	QUIT = 'q'
 
 
